@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI ミーティングノート</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo-icon">🎙️</span>
+        <span class="logo-text">ミーティングノート</span>
+      </div>
+      <button class="new-btn" id="newBtn">+ 新しいミーティング</button>
+      <div class="history-label">履歴</div>
+      <ul class="history-list" id="historyList"></ul>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Recording view -->
+      <div class="view" id="recordView">
+        <div class="record-header">
+          <h1 class="meeting-title-input" id="meetingTitle" contenteditable="true"
+              data-placeholder="ミーティングのタイトル（任意）"></h1>
+        </div>
+
+        <div class="context-section">
+          <div class="context-row">
+            <select id="templateSelect" class="template-select">
+              <option value="">── テンプレートを選択 ──</option>
+            </select>
+            <button class="text-btn" id="templateMgrBtn">テンプレート管理</button>
+          </div>
+          <div class="context-fields">
+            <div class="context-field">
+              <label class="context-label">種別</label>
+              <input type="text" id="meetingType" class="context-input" placeholder="例: ディスカッション" />
+            </div>
+            <div class="context-field">
+              <label class="context-label">参加者</label>
+              <input type="text" id="participants" class="context-input" placeholder="例: 田中、佐藤、鈴木" />
+            </div>
+            <div class="context-field context-field-wide">
+              <label class="context-label">議題・目的</label>
+              <input type="text" id="agenda" class="context-input" placeholder="例: 新機能の方向性を決める" />
+            </div>
+          </div>
+        </div>
+
+        <div class="record-area">
+          <div class="visualizer-wrap">
+            <canvas id="visualizer" width="400" height="80"></canvas>
+          </div>
+
+          <div class="record-controls">
+            <button class="record-btn" id="recordBtn">
+              <span class="record-icon" id="recordIcon">●</span>
+              <span id="recordLabel">録音開始</span>
+            </button>
+            <span class="timer" id="timer">00:00</span>
+          </div>
+
+          <div class="status-bar" id="statusBar">
+            Chromeで最適に動作します
+          </div>
+        </div>
+
+        <div class="transcript-section">
+          <div class="section-label">文字起こし</div>
+          <div class="transcript-box" id="transcriptBox">
+            <span class="placeholder">録音を開始すると、ここにリアルタイムで文字が表示されます</span>
+          </div>
+          <div class="transcript-actions">
+            <button class="action-btn secondary" id="clearBtn">クリア</button>
+            <button class="action-btn primary" id="summarizeBtn" disabled>
+              <span id="summarizeBtnText">✨ AI要約を生成</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary view -->
+      <div class="view hidden" id="summaryView">
+        <div class="summary-header">
+          <button class="back-btn" id="backBtn">← 戻る</button>
+          <h1 class="summary-title" id="summaryTitle"></h1>
+          <span class="summary-date" id="summaryDate"></span>
+          <div class="export-actions">
+            <button class="action-btn secondary" id="copyBtn">📋 コピー</button>
+            <button class="action-btn notion-btn" id="notionBtn">
+              <img src="https://www.notion.so/images/favicon.ico" width="14" height="14" alt="" onerror="this.style.display='none'">
+              Notionへ書き出し
+            </button>
+            <button class="icon-btn" id="notionSettingsBtn" title="Notion設定">⚙️</button>
+          </div>
+        </div>
+
+        <div class="summary-body" id="summaryBody"></div>
+
+        <div class="transcript-section">
+          <details>
+            <summary class="section-label toggle">文字起こし全文を表示</summary>
+            <div class="transcript-box readonly" id="summaryTranscript"></div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Loading overlay -->
+      <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">AIが要約を生成中...</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Template management modal -->
+  <div class="modal-overlay hidden" id="templateModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <span class="modal-title">テンプレート管理</span>
+        <button class="modal-close" id="templateModalClose">✕</button>
+      </div>
+      <div class="modal-body tpl-modal-body">
+        <div class="tpl-list-col">
+          <div class="tpl-list-header">
+            <span class="tpl-list-label">テンプレート一覧</span>
+            <button class="text-btn" id="tplNewBtn">+ 新規</button>
+          </div>
+          <ul class="tpl-list" id="tplList"></ul>
+        </div>
+        <div class="tpl-form-col">
+          <div class="field">
+            <label class="field-label">テンプレート名 <span class="required">*</span></label>
+            <input type="text" id="tplName" class="field-input" placeholder="例: 週次ディスカッション" />
+          </div>
+          <div class="field">
+            <label class="field-label">種別</label>
+            <input type="text" id="tplType" class="field-input" placeholder="例: ディスカッション" />
+          </div>
+          <div class="field">
+            <label class="field-label">参加者（デフォルト）</label>
+            <input type="text" id="tplParticipants" class="field-input" placeholder="例: 田中、佐藤" />
+          </div>
+          <div class="field">
+            <label class="field-label">議題・目的（デフォルト）</label>
+            <input type="text" id="tplAgenda" class="field-input" placeholder="例: 週次進捗確認" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="action-btn danger-btn hidden" id="tplDeleteBtn">削除</button>
+        <div style="flex:1"></div>
+        <button class="action-btn secondary" id="tplCancelBtn">キャンセル</button>
+        <button class="action-btn primary" id="tplSaveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notion settings modal -->
+  <div class="modal-overlay hidden" id="notionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Notion 連携設定</span>
+        <button class="modal-close" id="notionModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label">インテグレーショントークン</label>
+          <input type="password" id="notionToken" class="field-input" placeholder="secret_..." />
+          <div class="field-hint">
+            <a href="https://www.notion.so/profile/integrations" target="_blank">notion.so/profile/integrations</a> で作成
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">書き出し先ページID</label>
+          <input type="text" id="notionPageId" class="field-input" placeholder="NotionページURLの末尾32文字" />
+          <div class="field-hint">ページURL例: notion.so/MyPage-<strong>abc123...（この部分）</strong><br>※そのページをインテグレーションと共有してください</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="action-btn secondary" id="notionModalCancel">キャンセル</button>
+        <button class="action-btn primary" id="notionModalSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

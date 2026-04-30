@@ -1,4 +1,26 @@
 使い方：
+
+起動：
+cd /Users/obayashishinya/meeting-notes
+./start.sh
+http://localhost:8000
+
+
+  ---                                                                           
+  方法1：ダブルクリックで起動                                                   
+                                                                                
+  /Users/obayashishinya/recording/launch.command                                
+  をFinderでダブルクリックするだけ。                                            
+  - ターミナルが開いてサーバー起動                                            
+  - 2秒後に自動でブラウザが http://localhost:8000 を開く                        
+                                                                              
+  Dockに追加しておくとさらに便利です（launch.command をDockにドラッグ）。       
+                                                                                
+  方法2：ターミナルで1コマンド                                                  
+                                                                                
+  新しいターミナルを開いて：                                                    
+  meeting                                                                       
+  と打つだけ（新しいターミナルウィンドウで一度 source ~/.zshrc が必要です）。
                                                                                 
   コピーボタン — そのままNotionに貼り付けできるMarkdown形式でコピーされます。
                                                                                 

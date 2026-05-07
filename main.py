@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-CLAUDE_CLI = "/Users/obayashi/.local/bin/claude"
+CLAUDE_CLI = "/Users/obayashishinya/.local/bin/claude"
 
 app = FastAPI()
 DB_PATH = "meetings.db"
@@ -76,6 +76,11 @@ class SummarizeRequest(BaseModel):
     meeting_type: str = ""
     participants: str = ""
     agenda: str = ""
+
+
+class SaveTranscriptRequest(BaseModel):
+    transcript: str
+    title: str = ""
 
 
 class NotionExportRequest(BaseModel):
@@ -225,6 +230,65 @@ async def summarize(req: SummarizeRequest):
         (title, req.transcript, json.dumps(summary, ensure_ascii=False), now),
     )
     meeting_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {"id": meeting_id, "summary": summary}
+
+
+@app.post("/api/transcripts")
+async def save_transcript(req: SaveTranscriptRequest):
+    if not req.transcript.strip():
+        raise HTTPException(status_code=400, detail="文字起こしが空です")
+
+    title = req.title.strip() or req.transcript.strip()[:30] or "ミーティング"
+    now = datetime.now().isoformat()
+
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO meetings (title, transcript, summary, created_at) VALUES (?, ?, ?, ?)",
+        (title, req.transcript, "{}", now),
+    )
+    meeting_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {"id": meeting_id}
+
+
+@app.post("/api/meetings/{meeting_id}/summarize")
+async def summarize_existing(meeting_id: int):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT transcript FROM meetings WHERE id = ?", (meeting_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="見つかりません")
+
+    transcript = row["transcript"]
+    try:
+        raw = await call_claude(SUMMARY_PROMPT.format(context="", transcript=transcript))
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="タイムアウトしました。もう一度お試しください。")
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=500, detail=f"要約の解析に失敗しました。応答: {raw[:300]}")
+
+    try:
+        summary = json.loads(match.group())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"JSON解析エラー: {e}")
+
+    title = summary.get("title") or "ミーティング"
+    conn = get_db()
+    conn.execute(
+        "UPDATE meetings SET title = ?, summary = ? WHERE id = ?",
+        (title, json.dumps(summary, ensure_ascii=False), meeting_id),
+    )
     conn.commit()
     conn.close()
 

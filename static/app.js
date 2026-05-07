@@ -19,6 +19,7 @@ const statusBar         = document.getElementById('statusBar');
 const transcriptBox     = document.getElementById('transcriptBox');
 const summarizeBtn      = document.getElementById('summarizeBtn');
 const summarizeBtnTxt   = document.getElementById('summarizeBtnText');
+const saveBtn           = document.getElementById('saveBtn');
 const clearBtn          = document.getElementById('clearBtn');
 const newBtn            = document.getElementById('newBtn');
 const historyList       = document.getElementById('historyList');
@@ -411,7 +412,9 @@ function setStatus(msg, error = false) {
 }
 
 function updateSummarizeBtn() {
-  summarizeBtn.disabled = !finalTranscript.trim();
+  const empty = !finalTranscript.trim();
+  summarizeBtn.disabled = empty;
+  saveBtn.disabled = empty;
 }
 
 // ─── Summarize ────────────────────────────────────────────────────────────────
@@ -450,6 +453,33 @@ async function summarize() {
     summarizeBtn.disabled = false;
   } finally {
     loadingOverlay.classList.add('hidden');
+  }
+}
+
+// ─── Save transcript only ─────────────────────────────────────────────────────
+async function saveTranscript() {
+  if (!finalTranscript.trim()) return;
+  saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
+  saveBtn.textContent = '保存中...';
+  try {
+    const titleRaw = (meetingTitle.textContent || '').trim();
+    const res = await fetch('/api/transcripts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: finalTranscript, title: titleRaw }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `エラー (${res.status})`);
+    }
+    await loadHistory();
+    saveBtn.textContent = '✅ 保存しました';
+    setTimeout(() => { saveBtn.textContent = originalLabel; updateSummarizeBtn(); }, 1500);
+  } catch (e) {
+    alert(`保存失敗: ${e.message}`);
+    saveBtn.textContent = originalLabel;
+    saveBtn.disabled = false;
   }
 }
 
@@ -571,6 +601,15 @@ notionBtn.addEventListener('click', async () => {
 // ─── Summary view ─────────────────────────────────────────────────────────────
 let currentSummary = null;
 
+function isSummaryEmpty(s) {
+  if (!s || typeof s !== 'object') return true;
+  return !s.overview
+    && !(s.topics?.length)
+    && !(s.decisions?.length)
+    && !(s.action_items?.length)
+    && !(s.next_steps?.length);
+}
+
 function showSummaryView(summary, transcript, id) {
   recordView.classList.add('hidden');
   summaryView.classList.remove('hidden');
@@ -578,15 +617,52 @@ function showSummaryView(summary, transcript, id) {
   currentSummary = summary;
   currentMeetingId = id;
 
-  summaryTitle.textContent = summary.title || 'ミーティング要約';
+  const empty = isSummaryEmpty(summary);
+  summaryTitle.textContent = summary.title || (empty ? '保存した文字起こし' : 'ミーティング要約');
   summaryDate.textContent = formatDate(new Date().toISOString());
   summaryTranscript.textContent = transcript;
 
-  summaryBody.innerHTML = buildSummaryCards(summary);
+  if (empty) {
+    summaryBody.innerHTML = `
+      <div class="card">
+        <div class="card-title"><span class="icon">📝</span>文字起こし</div>
+        <p class="card-content">この記録にはまだ要約がありません。下のボタンから生成できます。</p>
+        <button class="action-btn primary" id="generateSummaryBtn">✨ AI要約を生成</button>
+      </div>`;
+    document.getElementById('generateSummaryBtn').addEventListener('click', generateSummaryForCurrent);
+    copyBtn.disabled = true;
+    notionBtn.disabled = true;
+  } else {
+    summaryBody.innerHTML = buildSummaryCards(summary);
+    copyBtn.disabled = false;
+    notionBtn.disabled = false;
+  }
 
   document.querySelectorAll('.history-item').forEach(el => {
     el.classList.toggle('active', el.dataset.id == id);
   });
+}
+
+async function generateSummaryForCurrent() {
+  if (!currentMeetingId) return;
+  const btn = document.getElementById('generateSummaryBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+  loadingOverlay.classList.remove('hidden');
+  try {
+    const res = await fetch(`/api/meetings/${currentMeetingId}/summarize`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `サーバーエラー (${res.status})`);
+    }
+    const data = await res.json();
+    await loadHistory();
+    showSummaryView(data.summary, summaryTranscript.textContent, currentMeetingId);
+  } catch (e) {
+    alert(`エラー: ${e.message}`);
+    if (btn) { btn.disabled = false; btn.textContent = '✨ AI要約を生成'; }
+  } finally {
+    loadingOverlay.classList.add('hidden');
+  }
 }
 
 function buildSummaryCards(s) {
@@ -699,6 +775,7 @@ function formatDate(iso) {
 // ─── Event listeners ──────────────────────────────────────────────────────────
 recordBtn.addEventListener('click', toggleRecording);
 summarizeBtn.addEventListener('click', summarize);
+saveBtn.addEventListener('click', saveTranscript);
 backBtn.addEventListener('click', showRecordView);
 
 clearBtn.addEventListener('click', () => {
